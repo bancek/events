@@ -58,7 +58,7 @@ func (e *Event) SetError(err error) {
 		e.SetField(FieldErrorStack, fmt.Sprintf("%+v", err))
 	}
 
-	if cause := UnwrapAll(err); cause != err {
+	if cause, ok := GetCause(err); ok {
 		e.SetField(FieldErrorCause, fmt.Sprintf("%#v", cause))
 	}
 }
