@@ -47,8 +47,7 @@ func (e *Event) SetField(key string, value interface{}) {
 }
 
 func (e *Event) GetField(key string) interface{} {
-	value, _ := e.fields[key]
-	return value
+	return e.fields[key]
 }
 
 func (e *Event) SetError(err error) {

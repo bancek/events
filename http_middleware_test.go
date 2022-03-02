@@ -85,4 +85,30 @@ var _ = Describe("HTTPMiddleware", func() {
 		Expect(eventFields["errorStack"]).To(ContainSubstring("http_middleware_test.go"))
 		Expect(eventFields["duration"]).To(BeNumerically(">=", 100*time.Millisecond))
 	})
+
+	It("should log the event with custom hooks", func() {
+		logger, _ := test.NewNullLogger()
+
+		requestLogged := false
+		eventLogged := false
+
+		middleware := NewHTTPMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			Expect(requestLogged).To(BeTrue())
+			Expect(eventLogged).To(BeFalse())
+		}), logger.WithFields(nil))
+
+		middleware.LogRequest = func(e *Event) {
+			requestLogged = true
+		}
+
+		middleware.LogEvent = func(e *Event) {
+			eventLogged = true
+		}
+
+		w := httptest.NewRecorder()
+
+		middleware.ServeHTTP(w, httptest.NewRequest("POST", "/path", nil))
+
+		Expect(eventLogged).To(BeTrue())
+	})
 })

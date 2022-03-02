@@ -18,6 +18,8 @@ type HTTPMiddleware struct {
 	RequestIDHeaderKey string
 	RequestLogMessage  string
 	EventLogMessage    string
+	LogRequest         func(e *Event)
+	LogEvent           func(e *Event)
 }
 
 func NewHTTPMiddleware(next http.Handler, logger *logrus.Entry) *HTTPMiddleware {
@@ -30,6 +32,8 @@ func NewHTTPMiddleware(next http.Handler, logger *logrus.Entry) *HTTPMiddleware 
 		RequestIDHeaderKey: "X-Request-Id",
 		RequestLogMessage:  "HTTP request",
 		EventLogMessage:    "Event",
+		LogRequest:         nil,
+		LogEvent:           nil,
 	}
 }
 
@@ -51,7 +55,11 @@ func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.BuildEvent(r, e)
 	}
 
-	e.Logger().Debug(m.RequestLogMessage)
+	if m.LogRequest != nil {
+		m.LogRequest(e)
+	} else {
+		e.Logger().Debug(m.RequestLogMessage)
+	}
 
 	r = r.WithContext(NewEventContext(r.Context(), e))
 
@@ -63,7 +71,11 @@ func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.SetField(FieldHTTPRespStatus, captureWriter.StatusCode)
 	e.SetField(FieldHTTPRespLen, captureWriter.ResponseLength)
 
-	e.Logger().Info(m.EventLogMessage)
+	if m.LogEvent != nil {
+		m.LogEvent(e)
+	} else {
+		e.Logger().Info(m.EventLogMessage)
+	}
 }
 
 func RequestIP(r *http.Request, trustForwardedFor bool) string {
