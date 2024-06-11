@@ -1,38 +1,41 @@
 package events_test
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
 	"golang.org/x/xerrors"
 
-	. "github.com/bancek/events"
+	. "github.com/bancek/events/v2"
 )
 
 var _ = Describe("HTTPMiddleware", func() {
 	It("should log the event", func() {
-		logger, hook := test.NewNullLogger()
-		logger.SetLevel(logrus.DebugLevel)
+		testRecords := &testRecords{}
+		logger := slog.New(&testHandler{testRecords: testRecords, attrsMap: map[string]any{}})
 
 		requestID := ""
 		requestError := xerrors.Errorf("test error: %w", xerrors.Errorf("original error"))
 
 		middleware := NewHTTPMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requestID = EventFromContext(r.Context()).GetField(FieldRequestID).(string)
+			event := EventFromContext(r.Context())
+			requestID = event.GetAttr(AttrRequestID).(string)
 			time.Sleep(100 * time.Millisecond)
-			SetRequestField(r, "customField", "custom value")
-			SetRequestError(r, requestError)
+			event.SetAttr("customAttr", "custom value")
+			event.SetError(requestError)
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte("hello world"))
-		}), logger.WithFields(nil))
+		}), logger)
 
 		middleware.BuildEvent = func(r *http.Request, e *Event) {
-			e.SetField("spanId", r.Header.Get("X-Span-Id"))
+			e.SetAttr("spanId", r.Header.Get("X-Span-Id"))
 		}
 
 		w := httptest.NewRecorder()
@@ -47,11 +50,10 @@ var _ = Describe("HTTPMiddleware", func() {
 		Expect(w.Result().StatusCode).To(Equal(http.StatusCreated))
 		Expect(w.Body.String()).To(Equal("hello world"))
 
-		entries := hook.AllEntries()
-		Expect(entries).To(HaveLen(2))
-		Expect(entries[0].Level).To(Equal(logrus.DebugLevel))
-		Expect(entries[0].Message).To(Equal("HTTP request"))
-		Expect(entries[0].Data).To(Equal(logrus.Fields{
+		Expect(testRecords.Records).To(HaveLen(2))
+		Expect(testRecords.Records[0].Level).To(Equal(slog.LevelDebug))
+		Expect(testRecords.Records[0].Message).To(Equal("HTTP request"))
+		Expect(testRecords.Records[0].AttrsMap).To(Equal(map[string]any{
 			"protocol":       "http",
 			"httpMethod":     "POST",
 			"httpUri":        "/path",
@@ -61,10 +63,10 @@ var _ = Describe("HTTPMiddleware", func() {
 			"requestId":      requestID,
 			"spanId":         "123456789",
 		}))
-		Expect(entries[1].Level).To(Equal(logrus.InfoLevel))
-		Expect(entries[1].Message).To(Equal("Event"))
-		eventFields := entries[1].Data
-		Expect(eventFields).To(Equal(logrus.Fields{
+		Expect(testRecords.Records[1].Level).To(Equal(slog.LevelInfo))
+		Expect(testRecords.Records[1].Message).To(Equal("Event"))
+		eventAttrs := testRecords.Records[1].AttrsMap
+		Expect(eventAttrs).To(Equal(map[string]any{
 			"protocol":       "http",
 			"httpMethod":     "POST",
 			"httpUri":        "/path",
@@ -73,21 +75,21 @@ var _ = Describe("HTTPMiddleware", func() {
 			"httpUserAgent":  "TestUserAgent",
 			"requestId":      requestID,
 			"spanId":         "123456789",
-			"duration":       eventFields["duration"],
-			"httpRespStatus": 201,
+			"duration":       eventAttrs["duration"],
+			"httpRespStatus": int64(201),
 			"httpRespLen":    int64(11),
 			"error":          requestError,
-			"errorCause":     eventFields["errorCause"],
-			"errorStack":     eventFields["errorStack"],
-			"customField":    "custom value",
+			"errorCause":     eventAttrs["errorCause"],
+			"errorStack":     eventAttrs["errorStack"],
+			"customAttr":     "custom value",
 		}))
-		Expect(eventFields["errorCause"]).To(ContainSubstring("original error"))
-		Expect(eventFields["errorStack"]).To(ContainSubstring("http_middleware_test.go"))
-		Expect(eventFields["duration"]).To(BeNumerically(">=", 100*time.Millisecond))
+		Expect(eventAttrs["errorCause"]).To(ContainSubstring("original error"))
+		Expect(eventAttrs["errorStack"]).To(ContainSubstring("http_middleware_test.go"))
+		Expect(eventAttrs["duration"]).To(BeNumerically(">=", 100*time.Millisecond))
 	})
 
 	It("should log the event with custom hooks", func() {
-		logger, _ := test.NewNullLogger()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 		requestLogged := false
 		eventLogged := false
@@ -95,7 +97,7 @@ var _ = Describe("HTTPMiddleware", func() {
 		middleware := NewHTTPMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			Expect(requestLogged).To(BeTrue())
 			Expect(eventLogged).To(BeFalse())
-		}), logger.WithFields(nil))
+		}), logger)
 
 		middleware.LogRequest = func(e *Event) {
 			requestLogged = true
@@ -112,3 +114,52 @@ var _ = Describe("HTTPMiddleware", func() {
 		Expect(eventLogged).To(BeTrue())
 	})
 })
+
+type testRecord struct {
+	slog.Record
+	AttrsMap map[string]any
+}
+
+type testRecords struct {
+	Records []*testRecord
+}
+
+type testHandler struct {
+	testRecords *testRecords
+	attrsMap    map[string]any
+}
+
+func (h *testHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return true
+}
+
+func (h *testHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newAttrs := maps.Clone(h.attrsMap)
+	for _, attr := range attrs {
+		newAttrs[attr.Key] = attr.Value.Any()
+	}
+	return &testHandler{
+		testRecords: h.testRecords,
+		attrsMap:    newAttrs,
+	}
+}
+
+func (h *testHandler) WithGroup(name string) slog.Handler {
+	return &testHandler{
+		testRecords: h.testRecords,
+		attrsMap:    maps.Clone(h.attrsMap),
+	}
+}
+
+func (h *testHandler) Handle(ctx context.Context, record slog.Record) error {
+	r := &testRecord{
+		Record:   record,
+		AttrsMap: maps.Clone(h.attrsMap),
+	}
+	record.Attrs(func(a slog.Attr) bool {
+		r.AttrsMap[a.Key] = a.Value.Any()
+		return true
+	})
+	h.testRecords.Records = append(h.testRecords.Records, r)
+	return nil
+}

@@ -2,66 +2,75 @@ package events
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
 )
 
 var (
-	FieldDuration       = "duration"
-	FieldErrorCause     = "errorCause"
-	FieldErrorStack     = "errorStack"
-	FieldHTTPMethod     = "httpMethod"
-	FieldHTTPRemoteAddr = "httpRemoteAddr"
-	FieldHTTPRespLen    = "httpRespLen"
-	FieldHTTPRespStatus = "httpRespStatus"
-	FieldHTTPSourceIP   = "httpSourceIp"
-	FieldHTTPURI        = "httpUri"
-	FieldHTTPUserAgent  = "httpUserAgent"
-	FieldProtocol       = "protocol"
-	FieldRequestID      = "requestId"
+	AttrDuration       = "duration"
+	AttrErrorCause     = "errorCause"
+	AttrErrorStack     = "errorStack"
+	AttrHTTPMethod     = "httpMethod"
+	AttrHTTPRemoteAddr = "httpRemoteAddr"
+	AttrHTTPRespLen    = "httpRespLen"
+	AttrHTTPRespStatus = "httpRespStatus"
+	AttrHTTPSourceIP   = "httpSourceIp"
+	AttrHTTPURI        = "httpUri"
+	AttrHTTPUserAgent  = "httpUserAgent"
+	AttrProtocol       = "protocol"
+	AttrRequestID      = "requestId"
 )
 
 type Event struct {
-	fields logrus.Fields
+	attrs map[string]slog.Value
 
-	baseLogger *logrus.Entry
+	baseLogger *slog.Logger
 }
 
-func NewEvent(logger *logrus.Entry) *Event {
+func NewEvent(logger *slog.Logger) *Event {
 	requestID := uuid.New().String()
 
 	e := &Event{
-		fields:     logrus.Fields{},
+		attrs:      map[string]slog.Value{},
 		baseLogger: logger,
 	}
 
-	e.SetField(FieldRequestID, requestID)
+	e.SetAttr(AttrRequestID, requestID)
 
 	return e
 }
 
-func (e *Event) SetField(key string, value interface{}) {
-	e.fields[key] = value
+func (e *Event) SetAttr(key string, value any) {
+	e.attrs[key] = slog.AnyValue(value)
 }
 
-func (e *Event) GetField(key string) interface{} {
-	return e.fields[key]
+func (e *Event) GetAttr(key string) any {
+	return e.attrs[key].Any()
 }
 
 func (e *Event) SetError(err error) {
-	e.SetField(logrus.ErrorKey, err)
+	e.SetAttr("error", err)
 
 	if _, ok := err.(xerrors.Wrapper); ok {
-		e.SetField(FieldErrorStack, fmt.Sprintf("%+v", err))
+		e.SetAttr(AttrErrorStack, fmt.Sprintf("%+v", err))
 	}
 
 	if cause, ok := GetCause(err); ok {
-		e.SetField(FieldErrorCause, fmt.Sprintf("%#v", cause))
+		e.SetAttr(AttrErrorCause, fmt.Sprintf("%#v", cause))
 	}
 }
 
-func (e *Event) Logger() *logrus.Entry {
-	return e.baseLogger.WithFields(e.fields)
+func (e *Event) Logger() *slog.Logger {
+	attrs := make([]any, 0, len(e.attrs))
+
+	for key, value := range e.attrs {
+		attrs = append(attrs, slog.Attr{
+			Key:   key,
+			Value: value,
+		})
+	}
+
+	return e.baseLogger.With(attrs...)
 }

@@ -2,9 +2,6 @@ package events
 
 import (
 	"context"
-	"net/http"
-
-	"github.com/sirupsen/logrus"
 )
 
 type contextKeyType string
@@ -19,21 +16,7 @@ func EventFromContext(ctx context.Context) *Event {
 	return ctx.Value(contextKey).(*Event)
 }
 
-func SetRequestField(r *http.Request, key string, value interface{}) {
-	e := EventFromContext(r.Context())
-	e.SetField(key, value)
-}
-
-func SetRequestError(r *http.Request, err error) {
-	e := EventFromContext(r.Context())
-	e.SetError(err)
-}
-
-func ContextLogger(ctx context.Context) *logrus.Entry {
-	e := EventFromContext(ctx)
-	return e.Logger()
-}
-
-func RequestLogger(r *http.Request) *logrus.Entry {
-	return ContextLogger(r.Context())
+func TryEventFromContext(ctx context.Context) (*Event, bool) {
+	event, ok := ctx.Value(contextKey).(*Event)
+	return event, ok
 }

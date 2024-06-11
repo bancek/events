@@ -1,11 +1,11 @@
 package events_test
 
 import (
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/xerrors"
 
-	. "github.com/bancek/events"
+	. "github.com/bancek/events/v2"
 )
 
 type pointerError struct {

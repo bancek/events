@@ -1,17 +1,15 @@
 package events
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
-
-	"github.com/koofr/go-httputils"
-	"github.com/sirupsen/logrus"
 )
 
 type HTTPMiddleware struct {
 	next   http.Handler
-	logger *logrus.Entry
+	logger *slog.Logger
 
 	BuildEvent         func(r *http.Request, e *Event)
 	TrustForwardedFor  bool
@@ -22,7 +20,7 @@ type HTTPMiddleware struct {
 	LogEvent           func(e *Event)
 }
 
-func NewHTTPMiddleware(next http.Handler, logger *logrus.Entry) *HTTPMiddleware {
+func NewHTTPMiddleware(next http.Handler, logger *slog.Logger) *HTTPMiddleware {
 	return &HTTPMiddleware{
 		next:   next,
 		logger: logger,
@@ -40,15 +38,17 @@ func NewHTTPMiddleware(next http.Handler, logger *logrus.Entry) *HTTPMiddleware 
 func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e := NewEvent(m.logger)
 
-	e.SetField(FieldProtocol, "http")
-	e.SetField(FieldHTTPMethod, r.Method)
-	e.SetField(FieldHTTPURI, r.RequestURI)
-	e.SetField(FieldHTTPRemoteAddr, r.RemoteAddr)
-	e.SetField(FieldHTTPSourceIP, RequestIP(r, m.TrustForwardedFor))
-	e.SetField(FieldHTTPUserAgent, r.UserAgent())
+	ctx := NewEventContext(r.Context(), e)
+
+	e.SetAttr(AttrProtocol, "http")
+	e.SetAttr(AttrHTTPMethod, r.Method)
+	e.SetAttr(AttrHTTPURI, r.RequestURI)
+	e.SetAttr(AttrHTTPRemoteAddr, r.RemoteAddr)
+	e.SetAttr(AttrHTTPSourceIP, RequestIP(r, m.TrustForwardedFor))
+	e.SetAttr(AttrHTTPUserAgent, r.UserAgent())
 
 	if requestID := r.Header.Get(m.RequestIDHeaderKey); requestID != "" {
-		e.SetField(FieldRequestID, requestID)
+		e.SetAttr(AttrRequestID, requestID)
 	}
 
 	if m.BuildEvent != nil {
@@ -58,23 +58,23 @@ func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if m.LogRequest != nil {
 		m.LogRequest(e)
 	} else {
-		e.Logger().Debug(m.RequestLogMessage)
+		e.Logger().LogAttrs(ctx, slog.LevelDebug, m.RequestLogMessage)
 	}
 
-	r = r.WithContext(NewEventContext(r.Context(), e))
+	r = r.WithContext(ctx)
 
-	captureWriter := httputils.NewCaptureResponseWriter(w)
+	captureWriter := NewCaptureResponseWriter(w)
 
 	m.next.ServeHTTP(captureWriter, r)
 
-	e.SetField(FieldDuration, captureWriter.Duration())
-	e.SetField(FieldHTTPRespStatus, captureWriter.StatusCode)
-	e.SetField(FieldHTTPRespLen, captureWriter.ResponseLength)
+	e.SetAttr(AttrDuration, captureWriter.Duration())
+	e.SetAttr(AttrHTTPRespStatus, captureWriter.StatusCode)
+	e.SetAttr(AttrHTTPRespLen, captureWriter.ResponseLength)
 
 	if m.LogEvent != nil {
 		m.LogEvent(e)
 	} else {
-		e.Logger().Info(m.EventLogMessage)
+		e.Logger().LogAttrs(r.Context(), slog.LevelInfo, m.EventLogMessage)
 	}
 }
 
