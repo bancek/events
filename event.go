@@ -10,6 +10,7 @@ import (
 
 var (
 	AttrDuration       = "duration"
+	AttrError          = "error"
 	AttrErrorCause     = "errorCause"
 	AttrErrorStack     = "errorStack"
 	AttrHTTPMethod     = "httpMethod"
@@ -51,7 +52,7 @@ func (e *Event) GetAttr(key string) any {
 }
 
 func (e *Event) SetError(err error) {
-	e.SetAttr("error", err)
+	e.SetAttr(AttrError, err)
 
 	if _, ok := err.(xerrors.Wrapper); ok {
 		e.SetAttr(AttrErrorStack, fmt.Sprintf("%+v", err))
