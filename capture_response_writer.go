@@ -83,3 +83,7 @@ func (w *CaptureResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 	return nil, nil, ErrResponseNotHijacker
 }
+
+func (w *CaptureResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
