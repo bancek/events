@@ -2,13 +2,11 @@ package events
 
 import (
 	"bufio"
-	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
 )
-
-var ErrResponseNotHijacker = errors.New("response does not implement http.Hijacker")
 
 type CaptureResponseWriter struct {
 	http.ResponseWriter
@@ -81,7 +79,15 @@ func (w *CaptureResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return hijacker.Hijack()
 	}
 
-	return nil, nil, ErrResponseNotHijacker
+	return nil, nil, fmt.Errorf("%w", http.ErrNotSupported)
+}
+
+func (w *CaptureResponseWriter) SetWriteDeadline(t time.Time) error {
+	if d, ok := w.ResponseWriter.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		return d.SetWriteDeadline(t)
+	}
+
+	return fmt.Errorf("%w", http.ErrNotSupported)
 }
 
 func (w *CaptureResponseWriter) Unwrap() http.ResponseWriter {
