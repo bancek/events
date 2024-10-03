@@ -3,6 +3,7 @@ package events
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 
 	"github.com/google/uuid"
@@ -43,6 +44,17 @@ func NewEvent(logger *slog.Logger) *Event {
 	e.SetAttr(AttrRequestID, requestID)
 
 	return e
+}
+
+func (e *Event) Clone() *Event {
+	e.mutex.RLock()
+	attrs := maps.Clone(e.attrs)
+	e.mutex.RUnlock()
+
+	return &Event{
+		attrs:      attrs,
+		baseLogger: e.baseLogger,
+	}
 }
 
 func (e *Event) SetAttr(key string, value any) {
