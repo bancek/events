@@ -99,11 +99,11 @@ var _ = Describe("HTTPMiddleware", func() {
 			Expect(eventLogged).To(BeFalse())
 		}), logger)
 
-		middleware.LogRequest = func(e *Event) {
+		middleware.LogRequest = func(ctx context.Context, e *Event) {
 			requestLogged = true
 		}
 
-		middleware.LogEvent = func(e *Event) {
+		middleware.LogEvent = func(ctx context.Context, e *Event) {
 			eventLogged = true
 		}
 

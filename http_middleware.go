@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,8 +17,8 @@ type HTTPMiddleware struct {
 	RequestIDHeaderKey string
 	RequestLogMessage  string
 	EventLogMessage    string
-	LogRequest         func(e *Event)
-	LogEvent           func(e *Event)
+	LogRequest         func(ctx context.Context, e *Event)
+	LogEvent           func(ctx context.Context, e *Event)
 }
 
 func NewHTTPMiddleware(next http.Handler, logger *slog.Logger) *HTTPMiddleware {
@@ -56,7 +57,7 @@ func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if m.LogRequest != nil {
-		m.LogRequest(e)
+		m.LogRequest(ctx, e)
 	} else {
 		e.Logger().LogAttrs(ctx, slog.LevelDebug, m.RequestLogMessage)
 	}
@@ -72,7 +73,7 @@ func (m *HTTPMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.SetAttr(AttrHTTPRespLen, captureWriter.ResponseLength)
 
 	if m.LogEvent != nil {
-		m.LogEvent(e)
+		m.LogEvent(r.Context(), e)
 	} else {
 		e.Logger().LogAttrs(r.Context(), slog.LevelInfo, m.EventLogMessage)
 	}
